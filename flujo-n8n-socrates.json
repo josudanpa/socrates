@@ -1,0 +1,102 @@
+{
+ "name": "sócrates - auditoría de respuesta a leads IA → humano (agencia)",
+ "nodes": [
+  {
+   "id": "70f971c6-7394-49d0-9383-14666f10e518",
+   "name": "Webhook Sócrates",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    -300,
+    0
+   ],
+   "webhookId": "4f42cdc9-8834-4975-826f-08abc640675d",
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "SOCRATES",
+    "responseMode": "responseNode",
+    "options": {
+     "allowedOrigins": "*"
+    }
+   }
+  },
+  {
+   "id": "45d4df4b-8efa-4766-9268-51a95cc270c6",
+   "name": "Config Sócrates",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -60,
+    0
+   ],
+   "parameters": {
+    "jsCode": "// Cuentas de Sócrates. Para agregar otra: su subdominio, su token de Kommo, las etapas \"delegadas\" y la zona horaria.\nreturn [{ json: { cuentas: {\n  \"landa\": {\n    \"nombre\": \"Instituto Landa\",\n    \"subdominio\": \"administracioninstitutolandacommx896\",\n    \"token\": \"TOKEN_DE_KOMMO\",\n    \"zona_horas\": -6,\n    \"lookback_dias\": 45,\n    \"agrupar_minutos\": 60,\n    \"usuarios_excluidos\": [],\n    \"max_leads\": 400,\n    \"delegadas\": [\n      {\n        \"pipeline_id\": 14248964,\n        \"status_id\": 110028120,\n        \"nombre\": \"Preparatoria › Delegado Instituto Landa\"\n      },\n      {\n        \"pipeline_id\": 14248964,\n        \"status_id\": 110028136,\n        \"nombre\": \"Preparatoria › Delegado Infinity Learning\"\n      },\n      {\n        \"pipeline_id\": 14508092,\n        \"status_id\": 112064416,\n        \"nombre\": \"Infinity Learning IA › Delegado\"\n      },\n      {\n        \"pipeline_id\": 10360195,\n        \"status_id\": 95211448,\n        \"nombre\": \"Embudo de ventas › Interés\"\n      }\n    ]\n  }\n} } }];"
+   }
+  },
+  {
+   "id": "d0477eb6-d4ec-4e84-9af0-7d3e4788d492",
+   "name": "Calcular Sócrates",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    180,
+    0
+   ],
+   "parameters": {
+    "jsCode": "// Sócrates: auditoría de respuesta a los leads que la IA pasa a un humano (pedido de Manu, 2-nov-2026).\n// El flujo solo entrega los HECHOS por lead (cuándo lo delegó la IA y cuándo hubo cada toque humano); las reglas de 24 h / 48 h\n// las aplica la página, así se pueden ajustar sin tocar este flujo.\n// Delegado por la IA = el lead entra por primera vez a una etapa \"delegada\" y ese cambio lo hizo el sistema (created_by = 0).\n// Toque humano = mensaje o llamada saliente, nota o tarea completada hecha por una persona (created_by distinto de 0).\n// Los toques separados por menos de `agrupar_minutos` cuentan como uno (una ráfaga de mensajes no es un seguimiento).\nconst body = $('Webhook Sócrates').first().json.body || {};\nconst cfg = $('Config Sócrates').first().json;\nconst cuentaKey = String(body.cuenta || 'landa').toLowerCase();\nconst cta = (cfg.cuentas || {})[cuentaKey];\nif (!cta) throw new Error('Cuenta no configurada: ' + cuentaKey);\nconst desde = body.desde || body.date_from;\nconst hasta = body.hasta || body.date_to;\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(desde || '') || !/^\\d{4}-\\d{2}-\\d{2}$/.test(hasta || '')) throw new Error('Faltan desde y hasta (AAAA-MM-DD).');\n\nconst OFF = (cta.zona_horas || 0) * 3600;                       // zona fija de la cuenta (México centro = -6)\nconst toStart = (d) => Math.floor(Date.parse(`${d}T00:00:00Z`) / 1000) - OFF;\nconst toEnd = (d) => Math.floor(Date.parse(`${d}T23:59:59Z`) / 1000) - OFF;\nconst fromTs = toStart(desde);\nconst toTs = toEnd(hasta);\nif (toTs < fromTs) throw new Error('El periodo está al revés.');\nif (toTs - fromTs > 62 * 86400) throw new Error('El periodo máximo es de 62 días.');\nconst ahora = Math.floor(Date.now() / 1000);\nconst LOOKBACK = (cta.lookback_dias || 45) * 86400;              // historial que se revisa para saber cuál fue la PRIMERA entrada\nconst AGRUP = (cta.agrupar_minutos || 60) * 60;\nconst MAX_LEADS = cta.max_leads || 400;\n\nconst headers = { Authorization: `Bearer ${cta.token}`, 'Content-Type': 'application/json' };\nconst base = `https://${cta.subdominio}.kommo.com/api/v4`;\nconst httpGet = async (url) => {\n  let resp = await this.helpers.httpRequest({ method: 'GET', url, headers, json: true });\n  if (!resp || typeof resp !== 'object') resp = {};            // Kommo regresa 204 sin cuerpo cuando no hay resultados\n  return resp;\n};\nconst paginar = async (url, clave, tope) => {\n  const out = [];\n  let u = url;\n  let g = 0;\n  while (u && g < tope) {\n    const r = await httpGet(u);\n    out.push(...((r._embedded && r._embedded[clave]) || []));\n    u = (r._links && r._links.next && r._links.next.href) || null;\n    g++;\n  }\n  return out;\n};\nconst agregar = (qp) => (k, v) => qp.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));\n\n// Nombres de embudos, etapas y usuarios\nconst nombreEmbudo = {};\nconst nombreEtapa = {};\nconst pl = await httpGet(`${base}/leads/pipelines`);\nfor (const pp of ((pl._embedded && pl._embedded.pipelines) || [])) {\n  nombreEmbudo[pp.id] = String(pp.name || '').trim();\n  for (const st of ((pp._embedded && pp._embedded.statuses) || [])) nombreEtapa[st.id] = String(st.name || '').trim();\n}\nconst users = await paginar(`${base}/users?limit=250`, 'users', 3);\nconst nombreUsuario = {};\nusers.forEach((u) => { nombreUsuario[u.id] = u.name; });\nconst excluidos = (cta.usuarios_excluidos || []).map(Number);\nconst personas = users.map((u) => Number(u.id)).filter((id) => !excluidos.includes(id));\n\n// 1) Primera entrada de cada lead a una etapa delegada (historial de etapas)\nconst delegadas = cta.delegadas || [];\nconst qe = [];\nconst ae = agregar(qe);\nae('filter[type][0]', 'lead_status_changed');\nae('filter[created_at][from]', fromTs - LOOKBACK);\nae('filter[created_at][to]', toTs);\ndelegadas.forEach((o, i) => {\n  ae(`filter[value_after][leads_statuses][${i}][pipeline_id]`, o.pipeline_id);\n  ae(`filter[value_after][leads_statuses][${i}][status_id]`, o.status_id);\n});\nae('limit', '100');\nconst eventosEntrada = await paginar(`${base}/events?${qe.join('&')}`, 'events', 60);\nconst primera = {};\nfor (const e of eventosEntrada) {\n  const id = e.entity_id;\n  if (id == null) continue;\n  const d = e.value_after && e.value_after[0] && e.value_after[0].lead_status;\n  if (!primera[id] || e.created_at < primera[id].ts) primera[id] = { ts: e.created_at, by: e.created_by || 0, etapa: d ? d.id : null, embudo: d ? d.pipeline_id : null };\n}\n// Cohorte: primera entrada dentro del periodo y hecha por el sistema (la IA)\nconst cohorteIds = Object.keys(primera).filter((id) => primera[id].ts >= fromTs && primera[id].ts <= toTs && primera[id].by === 0);\nconst entradasHumanas = Object.keys(primera).filter((id) => primera[id].ts >= fromTs && primera[id].ts <= toTs && primera[id].by !== 0).length;\ncohorteIds.sort((a, b) => primera[b].ts - primera[a].ts);\nconst truncado = cohorteIds.length > MAX_LEADS;\nconst idsUsar = cohorteIds.slice(0, MAX_LEADS);\n\n// 2) Datos de cada lead (con contactos)\nconst leads = [];\nfor (let i = 0; i < idsUsar.length; i += 50) {\n  const lote = idsUsar.slice(i, i + 50);\n  const q = ['limit=250', 'with=' + encodeURIComponent('contacts')];\n  lote.forEach((id, k) => q.push(`filter%5Bid%5D%5B${k}%5D=${id}`));\n  const r = await httpGet(`${base}/leads?${q.join('&')}`);\n  leads.push(...((r._embedded && r._embedded.leads) || []));\n}\nconst contactoDeLead = {};\nconst leadsDeContacto = {};\nfor (const l of leads) {\n  const cs = (l._embedded && l._embedded.contacts) || [];\n  const principal = cs.find((c) => c.is_main) || cs[0];\n  if (principal) { contactoDeLead[l.id] = principal.id; (leadsDeContacto[principal.id] = leadsDeContacto[principal.id] || []).push(l.id); }\n}\n\n// 3) Toques humanos después de la entrega\nconst toques = {};\nconst marcar = (leadId, ts) => { (toques[leadId] = toques[leadId] || []).push(ts); };\nif (leads.length && personas.length) {\n  const minTs = Math.min(...leads.map((l) => primera[l.id].ts));\n  const comunes = (qp) => {\n    const a = agregar(qp);\n    personas.forEach((h, i) => a(`filter[created_by][${i}]`, h));\n    a('filter[created_at][from]', minTs);\n    a('limit', '100');\n    return a;\n  };\n  const idsLead = leads.map((l) => l.id);\n  for (let i = 0; i < idsLead.length; i += 10) {\n    const qp = [];\n    const a = agregar(qp);\n    a('filter[entity]', 'lead');\n    a('filter[entity_id]', idsLead.slice(i, i + 10).join(','));\n    ['common_note_added', 'task_completed'].forEach((t, k) => a(`filter[type][${k}]`, t));\n    comunes(qp);\n    const ev = await paginar(`${base}/events?${qp.join('&')}`, 'events', 10);\n    for (const e of ev) marcar(e.entity_id, e.created_at);\n  }\n  const idsContacto = Object.keys(leadsDeContacto);\n  for (let i = 0; i < idsContacto.length; i += 10) {\n    const qp = [];\n    const a = agregar(qp);\n    a('filter[entity]', 'contact');\n    a('filter[entity_id]', idsContacto.slice(i, i + 10).join(','));\n    ['outgoing_chat_message', 'outgoing_call'].forEach((t, k) => a(`filter[type][${k}]`, t));\n    comunes(qp);\n    const ev = await paginar(`${base}/events?${qp.join('&')}`, 'events', 10);\n    for (const e of ev) {\n      if (e.entity_type === 'lead') marcar(e.entity_id, e.created_at);\n      else for (const lid of (leadsDeContacto[e.entity_id] || [])) marcar(lid, e.created_at);\n    }\n  }\n}\nconst agrupar = (arr) => {\n  const out = [];\n  let ultimo = null;\n  for (const t of arr.slice().sort((a, b) => a - b)) { if (ultimo === null || t - ultimo > AGRUP) out.push(t); ultimo = t; }\n  return out;\n};\nconst iso = (t) => new Date(t * 1000).toISOString();\n\n// 4) Respuesta: los hechos por lead\nconst salida = leads.map((l) => {\n  const ent = primera[l.id];\n  const despues = (toques[l.id] || []).filter((t) => t > ent.ts);\n  return {\n    id: l.id,\n    nombre: l.name || ('Lead ' + l.id),\n    asesor: nombreUsuario[l.responsible_user_id] || 'Sin responsable',\n    embudo: nombreEmbudo[ent.embudo] || nombreEmbudo[l.pipeline_id] || ('Embudo ' + (ent.embudo || l.pipeline_id)),   // donde la IA lo entregó\n    etapa_entrada: nombreEtapa[ent.etapa] || null,\n    etapa_actual: (nombreEmbudo[l.pipeline_id] ? nombreEmbudo[l.pipeline_id] + ' › ' : '') + (nombreEtapa[l.status_id] || ('Etapa ' + l.status_id)),   // donde está hoy\n    asignado_en: iso(ent.ts),\n    contactos: agrupar(despues).map(iso),\n    url: `https://${cta.subdominio}.kommo.com/leads/detail/${l.id}`,\n  };\n}).sort((a, b) => Date.parse(b.asignado_en) - Date.parse(a.asignado_en));\n\nreturn [{ json: {\n  cuenta: cuentaKey,\n  periodo: { desde, hasta },\n  generado: new Date().toISOString(),\n  zona_horas: OFF / 3600,\n  reglas: { contacto_horas: 24, seguimiento_horas: 48, agrupar_minutos: AGRUP / 60 },\n  total: cohorteIds.length,\n  truncado,\n  descartados_movidos_por_personas: entradasHumanas,\n  leads: salida,\n  nota_metodologica: 'Lead de Sócrates = el que la IA (o una automatización) pasó por primera vez a una etapa delegada en el periodo: ' +\n    delegadas.map((d) => d.nombre).join(', ') + '. Los que movió una persona no cuentan (' + entradasHumanas + ' en este periodo). ' +\n    'Toque humano = WhatsApp o llamada saliente, nota o tarea completada hecha por una persona dentro de Kommo; lo que se escribe fuera de Kommo no aparece. ' +\n    'Los toques separados por menos de ' + (AGRUP / 60) + ' min cuentan como uno. ' + (truncado ? 'Se muestran los ' + MAX_LEADS + ' más recientes.' : ''),\n} }];\n"
+   }
+  },
+  {
+   "id": "a45fb720-0ea7-45f9-8e90-7032f4786d33",
+   "name": "Respond Sócrates",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1,
+   "position": [
+    420,
+    0
+   ],
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {}
+   }
+  }
+ ],
+ "connections": {
+  "Webhook Sócrates": {
+   "main": [
+    [
+     {
+      "node": "Config Sócrates",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Config Sócrates": {
+   "main": [
+    [
+     {
+      "node": "Calcular Sócrates",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Calcular Sócrates": {
+   "main": [
+    [
+     {
+      "node": "Respond Sócrates",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ }
+}

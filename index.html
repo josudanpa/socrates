@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Sócrates · Auditoría de respuesta a leads</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Mismo lenguaje visual que Aristóteles (auditoría comercial): Sócrates es su extensión chica. */
+  :root {
+    --bg: #f7f7f8; --surface: #ffffff; --surface-2: #f1f2f4; --surface-hover: #e7e9ec;
+    --border: #dcdfe3; --border-soft: #e8eaed;
+    --ink: #1a1c20; --ink-soft: #6b6f78; --ink-faint: #9a9ea7;
+    --c-positive: #15803d; --c-loss: #b6552f; --c-warn: #a16207; --c-neutral: #5b5f68;
+    --bg-positive: #e7f5ec; --bg-loss: #fbece6; --bg-warn: #fbf3dc;
+    --radius-lg: 16px; --radius-md: 12px; --radius-sm: 8px;
+    --display: 'Space Grotesk', 'Segoe UI', sans-serif;
+    --body: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); line-height: 1.5; padding: 28px 20px 80px; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark { width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0; background: var(--surface-2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-family: var(--display); font-weight: 700; font-size: 20px; color: var(--ink-soft); }
+  .eyebrow { font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--c-positive); font-weight: 600; margin-bottom: 3px; }
+  h1 { font-family: var(--display); font-size: 22px; margin: 0; letter-spacing: -.01em; font-weight: 600; }
+  .badge-demo { display: none; font-size: 12.5px; font-family: var(--mono); padding: 7px 12px; border-radius: 999px; background: var(--bg-warn); color: var(--c-warn); border: 1px solid #ecdca4; }
+  .badge-demo.on { display: inline-block; }
+  .estado-carga { font-size: 12.5px; font-family: var(--mono); color: var(--ink-soft); }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 18px; }
+  .card h2 { font-family: var(--display); font-size: 15.5px; margin: 0 0 4px; font-weight: 600; }
+  .card .sub { font-size: 13px; color: var(--ink-soft); margin: 0 0 14px; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11.5px; color: var(--ink-soft); letter-spacing: .04em; text-transform: uppercase; font-weight: 600; }
+  select, input[type=date], input[type=search] { font-family: var(--body); font-size: 13.5px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; min-width: 150px; }
+  button { font-family: var(--body); font-size: 13.5px; font-weight: 600; cursor: pointer; border-radius: var(--radius-sm); padding: 9px 16px; border: 1px solid var(--ink); background: var(--ink); color: #fff; }
+  button.sec { background: var(--surface); color: var(--ink); border-color: var(--border); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .stat { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--radius-md); padding: 14px 16px; border-left: 4px solid var(--stat-color, var(--c-neutral)); }
+  .stat-label { font-size: 12px; color: var(--ink-soft); font-weight: 500; }
+  .stat-value { font-family: var(--display); font-size: 26px; font-weight: 700; line-height: 1.15; margin-top: 2px; }
+  .stat-sub { font-size: 12px; color: var(--ink-soft); font-family: var(--mono); margin-top: 2px; }
+
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+  th.num, td.num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+  tr:hover td { background: var(--surface-2); }
+  td a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border); }
+  td.muted { color: var(--ink-soft); }
+
+  .pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+  .pill.ok { background: var(--bg-positive); color: var(--c-positive); }
+  .pill.bad { background: var(--bg-loss); color: var(--c-loss); }
+  .pill.wait { background: var(--bg-warn); color: var(--c-warn); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; align-items: center; }
+  .chip { font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-soft); cursor: pointer; }
+  .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .chips input[type=search] { margin-left: auto; min-width: 220px; }
+
+  .empty { padding: 26px 10px; text-align: center; color: var(--ink-soft); font-size: 13.5px; }
+  .error { background: var(--bg-loss); color: var(--c-loss); border: 1px solid #f0cdbf; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 16px; font-size: 13.5px; display: none; }
+  .error.on { display: block; }
+  .nota { font-size: 12.5px; color: var(--ink-soft); line-height: 1.6; }
+  .nota b { color: var(--ink); font-weight: 600; }
+  .more { text-align: center; margin-top: 12px; }
+  @media (max-width: 640px) { body { padding: 18px 12px 60px; } .chips input[type=search] { margin-left: 0; width: 100%; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <div class="brand-mark">Σ</div>
+      <div>
+        <div class="eyebrow">Auditoría de respuesta · IA → humano</div>
+        <h1>Sócrates</h1>
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+      <span class="badge-demo" id="badgeDemo">Datos de ejemplo · sin conexión al flujo</span>
+      <span class="estado-carga" id="estadoCarga"></span>
+    </div>
+  </header>
+
+  <section class="card">
+    <div class="filters">
+      <div class="field"><label for="cuenta">Cuenta</label>
+        <select id="cuenta"><option value="landa">Instituto Landa</option><option value="greenhills" disabled>Green Hills (próximamente)</option></select></div>
+      <div class="field"><label for="desde">Asignados desde</label><input type="date" id="desde"></div>
+      <div class="field"><label for="hasta">Hasta</label><input type="date" id="hasta"></div>
+      <button id="btnActualizar">Actualizar</button>
+      <button class="sec" id="btnCsv">Descargar CSV</button>
+    </div>
+  </section>
+
+  <div class="error" id="error"></div>
+
+  <section class="card">
+    <h2>Resumen del periodo</h2>
+    <p class="sub">Leads que la IA pasó a un humano. Reglas: primer contacto en menos de <b id="rContacto">24</b> h y al menos un seguimiento dentro de <b id="rSeg">48</b> h.</p>
+    <div class="stats-row" id="stats"></div>
+  </section>
+
+  <section class="card">
+    <h2>Por asesor</h2>
+    <p class="sub">Cuánto cumple cada quien con las dos reglas. Solo cuentan los leads cuyo plazo ya venció o que ya se atendieron.</p>
+    <div class="table-scroll" id="tablaAsesores"></div>
+  </section>
+
+  <section class="card">
+    <h2>Leads asignados por la IA</h2>
+    <p class="sub">Primero los que incumplen. Toca el nombre para abrirlo en el CRM.</p>
+    <div class="chips" id="chips">
+      <button class="chip on" data-f="todos">Todos</button>
+      <button class="chip" data-f="incumple">Incumplen</button>
+      <button class="chip" data-f="sin">Sin contacto en 24 h</button>
+      <button class="chip" data-f="falta">Sin seguimiento en 48 h</button>
+      <button class="chip" data-f="plazo">Dentro de plazo</button>
+      <button class="chip" data-f="cumple">Cumplen</button>
+      <input type="search" id="buscar" placeholder="Buscar lead o asesor">
+    </div>
+    <div class="table-scroll" id="tablaLeads"></div>
+    <div class="more" id="more"></div>
+  </section>
+
+  <section class="card">
+    <h2>Cómo se calcula</h2>
+    <div class="nota" id="nota"></div>
+  </section>
+</div>
+
+<script>
+// ---------- Configuración ----------
+const API_URL = 'https://digital-crew-n8n.xrzfaj.easypanel.host/webhook/SOCRATES';   // flujo de n8n de la agencia (abierto, como los demás tableros en demo)
+const DEMO = new URLSearchParams(location.search).get('demo') === '1';               // ?demo=1 muestra datos de ejemplo
+const REGLAS = { contactoH: 24, seguimientoH: 48 };   // lo que pidió Manu (2-nov)
+const TZ = 'America/Mexico_City';
+const PAGINA = 100;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const st = { data: null, filtro: 'todos', q: '', limite: PAGINA, demo: false, filas: [] };
+
+// ---------- Utilidades ----------
+const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const fmtFecha = ms => ms ? new Date(ms).toLocaleString('es-MX', { timeZone: TZ, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+function fmtHoras(h) {
+  if (h == null) return '—';
+  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min';
+  if (h < 48) { const tot = Math.round(h * 60), hh = Math.floor(tot / 60), mm = tot % 60; return hh + ' h' + (mm ? ' ' + mm + ' min' : ''); }
+  const tot = Math.round(h), d = Math.floor(tot / 24), hh = tot % 24; return d + ' d' + (hh ? ' ' + hh + ' h' : '');
+}
+const pct = (a, b) => b ? Math.round(a * 100 / b) + '%' : '—';
+const mediana = arr => { if (!arr.length) return null; const s = [...arr].sort((x, y) => x - y), m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+
+// ---------- Reglas (la lógica vive aquí: el flujo solo entrega los hechos) ----------
+// Cada lead trae: id, nombre, asesor, embudo, asignado_en (ISO), contactos (ISO de cada toque humano: mensaje, llamada o nota), url.
+function evaluar(l, ahora) {
+  const asignado = Date.parse(l.asignado_en);
+  const toques = (l.contactos || []).map(Date.parse).filter(x => !isNaN(x) && x >= asignado).sort((a, b) => a - b);
+  const limC = asignado + REGLAS.contactoH * 36e5, limS = asignado + REGLAS.seguimientoH * 36e5;
+  const primer = toques[0] ?? null;
+  const horas = primer != null ? (primer - asignado) / 36e5 : null;
+  let contacto;
+  if (primer != null) contacto = primer <= limC ? 'ok' : 'tarde';
+  else contacto = ahora > limC ? 'sin' : 'plazo';
+  const seg = toques.slice(1).some(t => t <= limS);
+  const segun = seg ? 'ok' : (ahora > limS ? 'falta' : 'plazo');
+  const incumple = contacto === 'tarde' || contacto === 'sin' || segun === 'falta';
+  const cumple = contacto === 'ok' && segun === 'ok';
+  const estado = incumple ? 'incumple' : (cumple ? 'cumple' : 'plazo');
+  return { ...l, _asignado: asignado, _primer: primer, _horas: horas, _toques: toques.length, contacto, segun, estado };
+}
+
+// ---------- Datos ----------
+async function pedir() {
+  const body = { cuenta: $('cuenta').value, desde: $('desde').value, hasta: $('hasta').value };
+  if (DEMO) return { data: ejemplo(body), demo: true };
+  const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(r.status === 500 ? 'el flujo respondió con un error (revisa el periodo o la cuenta)' : 'HTTP ' + r.status);
+  const j = await r.json();
+  if (!j || !Array.isArray(j.leads)) throw new Error('la respuesta no trae leads');
+  return { data: j, demo: false };
+}
+
+function ejemplo(b) {   // datos de ejemplo, deterministas, para ver la página sin el flujo
+  let s = 7 + (b.cuenta === 'greenhills' ? 11 : 0);
+  const rnd = () => (s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const asesores = ['Asesor 1', 'Asesor 2', 'Asesor 3', 'Asesor 4'];
+  const embudos = b.cuenta === 'greenhills' ? ['Admisiones Rancho San Juan', 'Admisiones San Jerónimo'] : ['Preparatoria online', 'Licenciaturas'];
+  const ahora = Date.now(), leads = [];
+  for (let i = 0; i < 46; i++) {
+    const asignado = ahora - (2 + rnd() * 6 * 24) * 36e5 * (rnd() < .5 ? 1 : 2.2);
+    const ase = asesores[Math.floor(rnd() * asesores.length)];
+    const perfil = rnd(); const contactos = [];
+    const horasPrimer = perfil < .55 ? rnd() * 20 : perfil < .75 ? 24 + rnd() * 30 : null;
+    if (horasPrimer != null && asignado + horasPrimer * 36e5 < ahora) {
+      contactos.push(new Date(asignado + horasPrimer * 36e5).toISOString());
+      const seg = rnd();
+      if (seg < .6) contactos.push(new Date(asignado + (horasPrimer + 1 + rnd() * (46 - horasPrimer)) * 36e5).toISOString());
+      if (seg < .25) contactos.push(new Date(asignado + (horasPrimer + 20 + rnd() * 30) * 36e5).toISOString());
+    }
+    leads.push({ id: 100000 + i, nombre: 'Lead de ejemplo ' + (1042 + i), asesor: ase, embudo: embudos[Math.floor(rnd() * embudos.length)],
+      asignado_en: new Date(asignado).toISOString(), contactos: contactos.filter(c => Date.parse(c) < ahora), url: '#' });
+  }
+  return { cuenta: b.cuenta, generado: new Date().toISOString(), leads,
+    nota_metodologica: 'Datos de ejemplo: no son de ningún cliente real.' };
+}
+
+// ---------- Pintado ----------
+function stat(color, label, valor, sub) {
+  return `<div class="stat" style="--stat-color:${color}"><div class="stat-label">${label}</div><div class="stat-value">${valor}</div><div class="stat-sub">${sub || '&nbsp;'}</div></div>`;
+}
+
+function pintar() {
+  const ahora = Date.now();
+  const filas = (st.data.leads || []).map(l => evaluar(l, ahora));
+  st.filas = filas;
+  const n = filas.length;
+
+  const evC = filas.filter(f => f.contacto !== 'plazo'), okC = evC.filter(f => f.contacto === 'ok');
+  const sinC = filas.filter(f => f.contacto === 'sin');
+  const evS = filas.filter(f => f.segun !== 'plazo'), okS = evS.filter(f => f.segun === 'ok');
+  const plazo = filas.filter(f => f.estado === 'plazo');
+  $('stats').innerHTML = n ? (
+    stat('var(--c-neutral)', 'Asignados por la IA', n, 'en el periodo') +
+    stat('var(--c-positive)', `Contactados en menos de ${REGLAS.contactoH} h`, pct(okC.length, evC.length), `${okC.length} de ${evC.length}`) +
+    stat('var(--c-loss)', `Sin contacto pasadas ${REGLAS.contactoH} h`, sinC.length, 'siguen sin atender') +
+    stat('var(--c-positive)', `Con seguimiento en ${REGLAS.seguimientoH} h`, pct(okS.length, evS.length), `${okS.length} de ${evS.length}`) +
+    stat('var(--c-warn)', 'Todavía dentro de plazo', plazo.length, 'sin vencer')
+  ) : '';
+  if (!n) $('stats').innerHTML = '<div class="empty" style="grid-column:1/-1">Sin leads asignados por la IA en este periodo.</div>';
+
+  // Por asesor
+  const por = {};
+  filas.forEach(f => { (por[f.asesor || 'Sin asesor'] ||= []).push(f); });
+  const rowsA = Object.entries(por).map(([nombre, ls]) => {
+    const eC = ls.filter(f => f.contacto !== 'plazo'), oC = eC.filter(f => f.contacto === 'ok');
+    const eS = ls.filter(f => f.segun !== 'plazo'), oS = eS.filter(f => f.segun === 'ok');
+    const med = mediana(ls.filter(f => f._horas != null).map(f => f._horas));
+    const inc = ls.filter(f => f.estado === 'incumple').length;
+    return { nombre, n: ls.length, c: pct(oC.length, eC.length), cn: eC.length ? oC.length / eC.length : -1, med, s: pct(oS.length, eS.length), inc };
+  }).sort((a, b) => b.inc - a.inc || a.nombre.localeCompare(b.nombre));
+  $('tablaAsesores').innerHTML = rowsA.length ? `<table><thead><tr><th>Asesor</th><th class="num">Asignados</th><th class="num">Contacto &lt; ${REGLAS.contactoH} h</th><th class="num">Mediana al 1.er contacto</th><th class="num">Seguimiento &lt; ${REGLAS.seguimientoH} h</th><th class="num">Incumplen</th></tr></thead><tbody>` +
+    rowsA.map(a => `<tr><td>${esc(a.nombre)}</td><td class="num">${a.n}</td><td class="num">${a.c}</td><td class="num">${fmtHoras(a.med)}</td><td class="num">${a.s}</td><td class="num">${a.inc ? `<span class="pill bad">${a.inc}</span>` : '0'}</td></tr>`).join('') +
+    '</tbody></table>' : '<div class="empty">Sin datos.</div>';
+  if (rowsA.length === 1) $('tablaAsesores').insertAdjacentHTML('beforeend', '<p class="nota" style="margin-top:10px">Esta cuenta tiene un solo responsable en Kommo (todo el equipo comparte el mismo usuario), por eso aparece una sola fila.</p>');
+
+  pintarLeads();
+  $('rContacto').textContent = REGLAS.contactoH; $('rSeg').textContent = REGLAS.seguimientoH;
+  $('nota').innerHTML =
+    `<p><b>Qué es un lead de Sócrates:</b> uno que la IA calificó y pasó a un humano. Se mide desde ese momento.</p>` +
+    `<p><b>Contacto:</b> el primer toque humano (mensaje, llamada o nota) debe ocurrir dentro de ${REGLAS.contactoH} h. <b>Seguimiento:</b> debe haber al menos un toque más, después del primero, dentro de ${REGLAS.seguimientoH} h desde la asignación.</p>` +
+    `<p><b>Horas:</b> corridas, las 24 horas del día (sin descontar horario laboral).</p>` +
+    (st.data.nota_metodologica ? `<p>${esc(st.data.nota_metodologica)}</p>` : '');
+}
+
+function filtrar() {
+  const q = st.q.trim().toLowerCase();
+  const ord = { incumple: 0, plazo: 1, cumple: 2 };
+  return st.filas.filter(f => {
+    if (st.filtro === 'incumple' && f.estado !== 'incumple') return false;
+    if (st.filtro === 'sin' && f.contacto !== 'sin' && f.contacto !== 'tarde') return false;
+    if (st.filtro === 'falta' && f.segun !== 'falta') return false;
+    if (st.filtro === 'plazo' && f.estado !== 'plazo') return false;
+    if (st.filtro === 'cumple' && f.estado !== 'cumple') return false;
+    if (q && !((f.nombre || '') + ' ' + (f.asesor || '')).toLowerCase().includes(q)) return false;
+    return true;
+  }).sort((a, b) => ord[a.estado] - ord[b.estado] || b._asignado - a._asignado);
+}
+
+function pillContacto(f) {
+  if (f.contacto === 'ok') return `<span class="pill ok">${fmtHoras(f._horas)}</span>`;
+  if (f.contacto === 'tarde') return `<span class="pill bad">Tarde · ${fmtHoras(f._horas)}</span>`;
+  if (f.contacto === 'sin') return '<span class="pill bad">Sin contacto</span>';
+  return '<span class="pill wait">En plazo</span>';
+}
+function pillSeg(f) {
+  if (f.segun === 'ok') return '<span class="pill ok">Sí</span>';
+  if (f.segun === 'falta') return '<span class="pill bad">No</span>';
+  return '<span class="pill wait">En plazo</span>';
+}
+function pillEstado(f) {
+  return f.estado === 'cumple' ? '<span class="pill ok">Cumple</span>' : f.estado === 'incumple' ? '<span class="pill bad">Incumple</span>' : '<span class="pill wait">En plazo</span>';
+}
+
+function pintarLeads() {
+  const filas = filtrar(), ver = filas.slice(0, st.limite);
+  $('tablaLeads').innerHTML = filas.length ? `<table><thead><tr><th>Lead</th><th>Asesor</th><th>Entregado en</th><th>Hoy está en</th><th>Asignado por la IA</th><th>1.er contacto</th><th>Seguimiento</th><th>Estado</th></tr></thead><tbody>` +
+    ver.map(f => `<tr><td>${f.url && f.url !== '#' ? `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.nombre)}</a>` : esc(f.nombre)}</td><td>${esc(f.asesor || '—')}</td><td class="muted">${esc((f.embudo || '—') + (f.etapa_entrada ? ' › ' + f.etapa_entrada : ''))}</td><td class="muted">${esc(f.etapa_actual || '—')}</td><td class="num">${fmtFecha(f._asignado)}</td><td>${pillContacto(f)}</td><td>${pillSeg(f)}</td><td>${pillEstado(f)}</td></tr>`).join('') +
+    '</tbody></table>' : '<div class="empty">Ningún lead con este filtro.</div>';
+  $('more').innerHTML = filas.length > ver.length ? `<button class="sec" id="btnMas">Mostrar más (${filas.length - ver.length})</button>` : '';
+  const b = $('btnMas'); if (b) b.onclick = () => { st.limite += PAGINA; pintarLeads(); };
+}
+
+function csv() {
+  const cab = ['lead', 'asesor', 'embudo', 'asignado_por_ia', 'primer_contacto', 'horas_al_primer_contacto', 'contacto', 'seguimiento', 'estado'];
+  const lin = filtrar().map(f => [f.nombre, f.asesor, f.embudo, new Date(f._asignado).toISOString(), f._primer ? new Date(f._primer).toISOString() : '', f._horas != null ? f._horas.toFixed(2) : '', f.contacto, f.segun, f.estado]
+    .map(v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(','));
+  const blob = new Blob(['﻿' + cab.join(',') + '\n' + lin.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `socrates_${$('cuenta').value}_${$('desde').value}_${$('hasta').value}.csv`; a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ---------- Arranque ----------
+async function cargar() {
+  $('btnActualizar').disabled = true; $('estadoCarga').textContent = 'Cargando… (tarda unos segundos)'; $('error').classList.remove('on');
+  try {
+    const { data, demo } = await pedir();
+    st.data = data; st.demo = demo; st.limite = PAGINA;
+    $('badgeDemo').classList.toggle('on', demo);
+    pintar();
+    $('estadoCarga').textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+  } catch (e) {
+    $('error').textContent = 'No pude cargar los datos: ' + e.message + '. Intenta de nuevo con "Actualizar".';
+    $('error').classList.add('on');
+    $('estadoCarga').textContent = '';
+  }
+  $('btnActualizar').disabled = false;
+}
+
+(function init() {
+  const hoy = new Date(), hace7 = new Date(hoy.getTime() - 7 * 864e5);
+  $('desde').value = iso(hace7); $('hasta').value = iso(hoy);
+  const p = new URLSearchParams(location.search); if (p.get('cuenta')) $('cuenta').value = p.get('cuenta');
+  $('btnActualizar').onclick = cargar; $('btnCsv').onclick = csv; $('cuenta').onchange = cargar;
+  $('chips').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return;
+    st.filtro = c.dataset.f; st.limite = PAGINA; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c)); pintarLeads(); });
+  $('buscar').addEventListener('input', e => { st.q = e.target.value; st.limite = PAGINA; pintarLeads(); });
+  cargar();
+})();
+</script>
+</body>
+</html>
