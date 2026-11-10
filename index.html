@@ -312,7 +312,7 @@ function csv() {
   const cab = ['lead', 'asesor', 'embudo', 'asignado_por_ia', 'primer_contacto', 'horas_al_primer_contacto', 'contacto', 'seguimiento', 'estado'];
   const lin = filtrar().map(f => [f.nombre, f.asesor, f.embudo, new Date(f._asignado).toISOString(), f._primer ? new Date(f._primer).toISOString() : '', f._horas != null ? f._horas.toFixed(2) : '', f.contacto, f.segun, f.estado]
     .map(v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(','));
-  const blob = new Blob(['﻿' + cab.join(',') + '\n' + lin.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob([String.fromCharCode(65279) + cab.join(',') + String.fromCharCode(10) + lin.join(String.fromCharCode(10))], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = `socrates_${$('cuenta').value}_${$('desde').value}_${$('hasta').value}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }

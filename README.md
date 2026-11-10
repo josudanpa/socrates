@@ -7,6 +7,11 @@ Extensión chica de Aristóteles. Pedido de Manu (Slack, 2-nov-2026): de los lea
 
 Primera cuenta: **Instituto Landa**. Siguiente: Green Hills (falta su token y sus etapas).
 
+## Dónde está en vivo
+- **URL:** https://digital-crew-socrates.xrzfaj.easypanel.host (EasyPanel, proyecto `digital-crew`, servicio `socrates`, sin contraseña por ser demo).
+- **Cómo está desplegado:** imagen `nginx:alpine` con `index.html` montado como archivo (mount de tipo file). El token de GitHub de EasyPanel está inválido para repos privados, por eso no se despliega desde este repo.
+- **Para actualizar la página:** reemplazar el contenido del mount `/usr/share/nginx/html/index.html` y volver a desplegar (lo hace Claude con el MCP de EasyPanel). Para volver a desplegar desde GitHub: arreglar el token en EasyPanel (o hacer público el repo) y cambiar la fuente del servicio a este repo.
+
 ## Piezas
 - `index.html`: página estática (sin build). Llama al webhook y aplica las reglas de 24 h y 48 h en el navegador, así se ajustan sin tocar el flujo.
   `?demo=1` muestra datos de ejemplo.
