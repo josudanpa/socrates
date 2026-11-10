@@ -345,7 +345,10 @@ function csv() {
 }
 
 // ---------- Arranque ----------
+let cargando = false, pendiente = false;   // una consulta a la vez: Kommo limita las peticiones por segundo
 async function cargar() {
+  if (cargando) { pendiente = true; return; }   // varios clics seguidos: al terminar corre una sola vez con las últimas fechas
+  cargando = true; pendiente = false;
   $('btnActualizar').disabled = true; $('estadoCarga').textContent = 'Cargando… (tarda unos segundos)'; $('error').classList.remove('on');
   try {
     const { data, demo } = await pedir();
@@ -359,6 +362,8 @@ async function cargar() {
     $('estadoCarga').textContent = '';
   }
   $('btnActualizar').disabled = false;
+  cargando = false;
+  if (pendiente) cargar();
 }
 
 (function init() {
