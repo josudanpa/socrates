@@ -45,6 +45,10 @@
   button { font-family: var(--body); font-size: 13.5px; font-weight: 600; cursor: pointer; border-radius: var(--radius-sm); padding: 9px 16px; border: 1px solid var(--ink); background: var(--ink); color: #fff; }
   button.sec { background: var(--surface); color: var(--ink); border-color: var(--border); }
   button:disabled { opacity: .5; cursor: default; }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px; }
+  .presets button { background: var(--surface-2); color: var(--ink-soft); border: 1px solid var(--border); font-weight: 600; padding: 6px 14px; font-size: 12.5px; border-radius: 999px; }
+  .presets button:hover { color: var(--ink); border-color: var(--ink-soft); }
+  .presets button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
 
   .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
   .stat { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--radius-md); padding: 14px 16px; border-left: 4px solid var(--stat-color, var(--c-neutral)); }
@@ -98,6 +102,14 @@
   </header>
 
   <section class="card">
+    <div class="presets" id="presets">
+      <button type="button" data-preset="hoy">Hoy</button>
+      <button type="button" data-preset="ayer">Ayer</button>
+      <button type="button" data-preset="7dias">Últimos 7 días</button>
+      <button type="button" data-preset="semana">Esta semana</button>
+      <button type="button" data-preset="mes">Este mes</button>
+      <button type="button" data-preset="mesPasado">Mes pasado</button>
+    </div>
     <div class="filters">
       <div class="field"><label for="cuenta">Cuenta</label>
         <select id="cuenta"><option value="landa">Instituto Landa</option><option value="greenhills" disabled>Green Hills (próximamente)</option></select></div>
@@ -157,7 +169,22 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const st = { data: null, filtro: 'todos', q: '', limite: PAGINA, demo: false, filas: [] };
 
 // ---------- Utilidades ----------
-const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+// Fecha LOCAL como AAAA-MM-DD (no usar toISOString: pasa a UTC y adelanta el día después de las 18:00 en México).
+const fmt = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+function rango(p) {   // [desde, hasta] de cada botón rápido
+  const h = new Date(), y = h.getFullYear(), m = h.getMonth(), d = h.getDate();
+  let a = new Date(y, m, d), b = a;
+  if (p === 'ayer') { a = new Date(y, m, d - 1); b = a; }
+  if (p === '7dias') a = new Date(y, m, d - 6);
+  if (p === 'semana') a = new Date(y, m, d - ((h.getDay() + 6) % 7));   // lunes de esta semana
+  if (p === 'mes') a = new Date(y, m, 1);
+  if (p === 'mesPasado') { a = new Date(y, m - 1, 1); b = new Date(y, m, 0); }
+  return [fmt(a), fmt(b)];
+}
+function marcarPreset() {   // resalta el botón que coincide con las fechas puestas
+  const d = $('desde').value, h = $('hasta').value;
+  document.querySelectorAll('#presets button').forEach(b => { const [x, y] = rango(b.dataset.preset); b.classList.toggle('on', x === d && y === h); });
+}
 const fmtFecha = ms => ms ? new Date(ms).toLocaleString('es-MX', { timeZone: TZ, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
 function fmtHoras(h) {
   if (h == null) return '—';
@@ -335,10 +362,12 @@ async function cargar() {
 }
 
 (function init() {
-  const hoy = new Date(), hace7 = new Date(hoy.getTime() - 7 * 864e5);
-  $('desde').value = iso(hace7); $('hasta').value = iso(hoy);
+  const [d0, d1] = rango('7dias'); $('desde').value = d0; $('hasta').value = d1; marcarPreset();
   const p = new URLSearchParams(location.search); if (p.get('cuenta')) $('cuenta').value = p.get('cuenta');
   $('btnActualizar').onclick = cargar; $('btnCsv').onclick = csv; $('cuenta').onchange = cargar;
+  $('presets').addEventListener('click', e => { const b = e.target.closest('button[data-preset]'); if (!b) return;
+    const [x, y] = rango(b.dataset.preset); $('desde').value = x; $('hasta').value = y; marcarPreset(); cargar(); });
+  $('desde').onchange = marcarPreset; $('hasta').onchange = marcarPreset;
   $('chips').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return;
     st.filtro = c.dataset.f; st.limite = PAGINA; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c)); pintarLeads(); });
   $('buscar').addEventListener('input', e => { st.q = e.target.value; st.limite = PAGINA; pintarLeads(); });
