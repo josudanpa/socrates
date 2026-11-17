@@ -14,8 +14,8 @@
     --bg: #f7f7f8; --surface: #ffffff; --surface-2: #f1f2f4; --surface-hover: #e7e9ec;
     --border: #dcdfe3; --border-soft: #e8eaed;
     --ink: #1a1c20; --ink-soft: #6b6f78; --ink-faint: #9a9ea7;
-    --c-positive: #15803d; --c-loss: #b6552f; --c-warn: #a16207; --c-neutral: #5b5f68;
-    --bg-positive: #e7f5ec; --bg-loss: #fbece6; --bg-warn: #fbf3dc;
+    --c-positive: #15803d; --c-loss: #d92d20; --c-warn: #a16207; --c-neutral: #5b5f68;   /* c-loss: rojo franco (el director pidió rojo, no guinda) */
+    --bg-positive: #e7f5ec; --bg-loss: #fee4e2; --bg-warn: #fbf3dc;
     --radius-lg: 16px; --radius-md: 12px; --radius-sm: 8px;
     --display: 'Space Grotesk', 'Segoe UI', sans-serif;
     --body: 'Inter', -apple-system, 'Segoe UI', sans-serif;
@@ -76,7 +76,7 @@
   .chips input[type=search] { margin-left: auto; min-width: 220px; }
 
   .empty { padding: 26px 10px; text-align: center; color: var(--ink-soft); font-size: 13.5px; }
-  .error { background: var(--bg-loss); color: var(--c-loss); border: 1px solid #f0cdbf; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 16px; font-size: 13.5px; display: none; }
+  .error { background: var(--bg-loss); color: var(--c-loss); border: 1px solid #fecdca; border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 16px; font-size: 13.5px; display: none; }
   .error.on { display: block; }
   .nota { font-size: 12.5px; color: var(--ink-soft); line-height: 1.6; }
   .nota b { color: var(--ink); font-weight: 600; }
@@ -122,9 +122,16 @@
 
   <div class="error" id="error"></div>
 
+  <section class="card" id="cardIA">
+    <h2>Leads atendidos por la IA</h2>
+    <p class="sub">De los leads que entraron en el periodo, cuántos calificó la IA y pasó a un humano.</p>
+    <div class="stats-row" id="statsIA"></div>
+    <p class="nota" id="notaIA" style="margin:10px 0 0"></p>
+  </section>
+
   <section class="card">
     <h2>Resumen del periodo</h2>
-    <p class="sub">Leads que la IA pasó a un humano. Reglas: primer contacto en menos de <b id="rContacto">24</b> h y al menos un seguimiento dentro de <b id="rSeg">48</b> h.</p>
+    <p class="sub">Leads que la IA pasó a un humano. Los tiempos son <b>horas hábiles</b> (<span id="rHorario">lunes a viernes de 9:00 a 18:00</span>): primer contacto en menos de <b id="rContacto">20 min</b> y al menos un seguimiento dentro de <b id="rSeg">48 h</b>.</p>
     <div class="stats-row" id="stats"></div>
   </section>
 
@@ -140,8 +147,9 @@
     <div class="chips" id="chips">
       <button class="chip on" data-f="todos">Todos</button>
       <button class="chip" data-f="incumple">Incumplen</button>
-      <button class="chip" data-f="sin">Sin contacto en 24 h</button>
-      <button class="chip" data-f="falta">Sin seguimiento en 48 h</button>
+      <button class="chip" data-f="fuera" id="chipFuera">Fuera de los 20 min</button>
+      <button class="chip" data-f="sin24" id="chipSin24">Sin contacto pasadas 24 h</button>
+      <button class="chip" data-f="falta" id="chipFalta">Sin seguimiento en 48 h</button>
       <button class="chip" data-f="plazo">Dentro de plazo</button>
       <button class="chip" data-f="cumple">Cumplen</button>
       <input type="search" id="buscar" placeholder="Buscar lead o asesor">
@@ -160,7 +168,10 @@
 // ---------- Configuración ----------
 const API_URL = 'https://digital-crew-n8n.xrzfaj.easypanel.host/webhook/SOCRATES';   // flujo de n8n de la agencia (abierto, como los demás tableros en demo)
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';               // ?demo=1 muestra datos de ejemplo
-const REGLAS = { contactoH: 24, seguimientoH: 48 };   // lo que pidió Manu (2-nov)
+// Reglas y horario: por omisión lo que pidió el director (17-nov). El flujo los entrega por cuenta (reglas, horario, zona_horas) y pisan estos valores:
+// cada cliente tiene su horario (Green Hills sale a las 15-16 h, hay escuelas que trabajan de lunes a sábado), se parametrizan en el flujo.
+const REGLAS = { primerMin: 20, sinContactoH: 24, seguimientoH: 48 };   // los tiempos son HORAS HÁBILES
+const HOR = { off: -6 * 36e5, ini: 9, fin: 18, dias: [1, 2, 3, 4, 5], texto: 'lunes a viernes de 9:00 a 18:00' };   // dias: 0 = domingo ... 6 = sábado
 const TZ = 'America/Mexico_City';
 const PAGINA = 100;
 
@@ -186,32 +197,67 @@ function marcarPreset() {   // resalta el botón que coincide con las fechas pue
   document.querySelectorAll('#presets button').forEach(b => { const [x, y] = rango(b.dataset.preset); b.classList.toggle('on', x === d && y === h); });
 }
 const fmtFecha = ms => ms ? new Date(ms).toLocaleString('es-MX', { timeZone: TZ, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
-function fmtHoras(h) {
+// Horas hábiles transcurridas entre dos instantes (ms): solo cuenta el tiempo dentro del horario laboral (HOR), en la zona de la cuenta.
+function msHabiles(a, b) {
+  if (a == null || b == null || b <= a) return 0;
+  const DIA = 864e5, la = a + HOR.off, lb = b + HOR.off;
+  let dia = Math.floor(la / DIA) * DIA, total = 0, g = 0;
+  while (dia < lb && g < 3660) {
+    if (HOR.dias.includes(new Date(dia).getUTCDay())) {
+      const x = Math.max(la, dia + HOR.ini * 36e5), y = Math.min(lb, dia + HOR.fin * 36e5);
+      if (y > x) total += y - x;
+    }
+    dia += DIA; g++;
+  }
+  return total;
+}
+const hab = (a, b) => msHabiles(a, b) / 36e5;   // en horas
+function fmtHab(h) {   // horas hábiles legibles: "12 min", "3 h 20 min", "52 h"
   if (h == null) return '—';
   if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min';
-  if (h < 48) { const tot = Math.round(h * 60), hh = Math.floor(tot / 60), mm = tot % 60; return hh + ' h' + (mm ? ' ' + mm + ' min' : ''); }
-  const tot = Math.round(h), d = Math.floor(tot / 24), hh = tot % 24; return d + ' d' + (hh ? ' ' + hh + ' h' : '');
+  if (h < 10) { const tot = Math.round(h * 60), hh = Math.floor(tot / 60), mm = tot % 60; return hh + ' h' + (mm ? ' ' + mm + ' min' : ''); }
+  return Math.round(h) + ' h';
 }
 const pct = (a, b) => b ? Math.round(a * 100 / b) + '%' : '—';
+// Semáforo de un porcentaje (el director no dio umbrales: 80 % o más verde, 50-79 % ámbar, menos de 50 % rojo; ajustable aquí)
+const semaforo = (a, b) => !b ? 'var(--c-neutral)' : (a * 100 / b >= 80 ? 'var(--c-positive)' : a * 100 / b >= 50 ? 'var(--c-warn)' : 'var(--c-loss)');
+
+function aplicarReglas(d) {   // toma reglas y horario de la respuesta del flujo (con valores por omisión si el flujo es una versión vieja)
+  const r = d.reglas || {}, h = d.horario || {};
+  REGLAS.primerMin = r.primer_contacto_min ?? 20;
+  REGLAS.sinContactoH = r.sin_contacto_horas ?? r.contacto_horas ?? 24;
+  REGLAS.seguimientoH = r.seguimiento_horas ?? 48;
+  HOR.off = (d.zona_horas ?? -6) * 36e5;
+  HOR.ini = h.ini ?? 9; HOR.fin = h.fin ?? 18; HOR.dias = h.dias || [1, 2, 3, 4, 5];
+  HOR.texto = h.texto || 'lunes a viernes de 9:00 a 18:00';
+  const primer = fmtHab(REGLAS.primerMin / 60);
+  $('rHorario').textContent = HOR.texto; $('rContacto').textContent = primer; $('rSeg').textContent = REGLAS.seguimientoH + ' h';
+  $('chipFuera').textContent = 'Fuera de los ' + primer; $('chipSin24').textContent = `Sin contacto pasadas ${REGLAS.sinContactoH} h`; $('chipFalta').textContent = `Sin seguimiento en ${REGLAS.seguimientoH} h`;
+}
 const mediana = arr => { if (!arr.length) return null; const s = [...arr].sort((x, y) => x - y), m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 // ---------- Reglas (la lógica vive aquí: el flujo solo entrega los hechos) ----------
 // Cada lead trae: id, nombre, asesor, embudo, asignado_en (ISO), contactos (ISO de cada toque humano: mensaje, llamada o nota), url.
+// Todos los tiempos son horas HÁBILES desde que la IA entregó el lead (si lo entregó fuera de horario, el reloj arranca al abrir).
+//   contacto: 'ideal' (primer toque en <= 20 min) · 'tarde' (hubo toque pero después de los 20 min) · 'sin' (ningún toque y ya pasaron los 20 min) · 'plazo' (ningún toque, aún está a tiempo)
+//   sin24: ningún toque registrado y ya pasaron 24 h hábiles (es lo mismo que contacto 'sin', pero más grave)
+//   segun: 'ok' (otro toque dentro de 48 h) · 'falta' (se venció el plazo sin seguimiento) · 'plazo' (todavía a tiempo)
 function evaluar(l, ahora) {
   const asignado = Date.parse(l.asignado_en);
   const toques = (l.contactos || []).map(Date.parse).filter(x => !isNaN(x) && x >= asignado).sort((a, b) => a - b);
-  const limC = asignado + REGLAS.contactoH * 36e5, limS = asignado + REGLAS.seguimientoH * 36e5;
   const primer = toques[0] ?? null;
-  const horas = primer != null ? (primer - asignado) / 36e5 : null;
-  let contacto;
-  if (primer != null) contacto = primer <= limC ? 'ok' : 'tarde';
-  else contacto = ahora > limC ? 'sin' : 'plazo';
-  const seg = toques.slice(1).some(t => t <= limS);
-  const segun = seg ? 'ok' : (ahora > limS ? 'falta' : 'plazo');
+  const horas = primer != null ? hab(asignado, primer) : null;      // horas hábiles al primer contacto
+  const trans = hab(asignado, ahora);                                // horas hábiles que lleva asignado
+  const limiteC = REGLAS.primerMin / 60;
+  let contacto, sin24 = false;
+  if (primer != null) contacto = horas <= limiteC ? 'ideal' : 'tarde';
+  else { contacto = trans > limiteC ? 'sin' : 'plazo'; sin24 = trans > REGLAS.sinContactoH; }
+  const seg = toques.slice(1).some(t => hab(asignado, t) <= REGLAS.seguimientoH);
+  const segun = seg ? 'ok' : (trans > REGLAS.seguimientoH ? 'falta' : 'plazo');
   const incumple = contacto === 'tarde' || contacto === 'sin' || segun === 'falta';
-  const cumple = contacto === 'ok' && segun === 'ok';
+  const cumple = contacto === 'ideal' && segun === 'ok';
   const estado = incumple ? 'incumple' : (cumple ? 'cumple' : 'plazo');
-  return { ...l, _asignado: asignado, _primer: primer, _horas: horas, _toques: toques.length, contacto, segun, estado };
+  return { ...l, _asignado: asignado, _primer: primer, _horas: horas, _trans: trans, _toques: toques.length, contacto, sin24, segun, estado };
 }
 
 // ---------- Datos ----------
@@ -245,7 +291,8 @@ function ejemplo(b) {   // datos de ejemplo, deterministas, para ver la página 
     leads.push({ id: 100000 + i, nombre: 'Lead de ejemplo ' + (1042 + i), asesor: ase, embudo: embudos[Math.floor(rnd() * embudos.length)],
       asignado_en: new Date(asignado).toISOString(), contactos: contactos.filter(c => Date.parse(c) < ahora), url: '#' });
   }
-  return { cuenta: b.cuenta, generado: new Date().toISOString(), leads,
+  return { cuenta: b.cuenta, generado: new Date().toISOString(), zona_horas: -6, total: leads.length, leads,
+    entrantes: { total: 230, por_embudo: Object.fromEntries(embudos.map((e, i) => [e, i ? 70 : 160])) },
     nota_metodologica: 'Datos de ejemplo: no son de ningún cliente real.' };
 }
 
@@ -255,21 +302,34 @@ function stat(color, label, valor, sub) {
 }
 
 function pintar() {
+  aplicarReglas(st.data);
   const ahora = Date.now();
   const filas = (st.data.leads || []).map(l => evaluar(l, ahora));
   st.filas = filas;
   const n = filas.length;
 
-  const evC = filas.filter(f => f.contacto !== 'plazo'), okC = evC.filter(f => f.contacto === 'ok');
-  const sinC = filas.filter(f => f.contacto === 'sin');
+  // Leads atendidos por la IA: entrantes (creados en el periodo) vs asignados a un humano
+  const ent = st.data.entrantes, asig = st.data.total != null ? st.data.total : n;
+  $('cardIA').style.display = ent ? '' : 'none';
+  if (ent) {
+    $('statsIA').innerHTML =
+      stat('var(--c-neutral)', 'Leads entrantes', ent.total, 'creados en el periodo') +
+      stat('var(--c-neutral)', 'Asignados por la IA', asig, 'pasados a un humano') +
+      stat('var(--c-neutral)', 'Tasa de asignación', pct(asig, ent.total), `${asig} de ${ent.total} entrantes`);
+    const emb = Object.entries(ent.por_embudo || {}).map(([k, v]) => `${esc(k)}: <b>${v}</b>`).join(' · ');
+    $('notaIA').innerHTML = (emb ? `<b>Entrantes por embudo:</b> ${emb}. ` : '') + 'Los asignados pueden haber entrado antes del periodo, por eso la tasa es una referencia del flujo, no una cohorte exacta.';
+  }
+
+  const evC = filas.filter(f => f.contacto !== 'plazo'), okC = evC.filter(f => f.contacto === 'ideal');
+  const sin24 = filas.filter(f => f.sin24);
   const evS = filas.filter(f => f.segun !== 'plazo'), okS = evS.filter(f => f.segun === 'ok');
   const plazo = filas.filter(f => f.estado === 'plazo');
   $('stats').innerHTML = n ? (
     stat('var(--c-neutral)', 'Asignados por la IA', n, 'en el periodo') +
-    stat('var(--c-positive)', `Contactados en menos de ${REGLAS.contactoH} h`, pct(okC.length, evC.length), `${okC.length} de ${evC.length}`) +
-    stat('var(--c-loss)', `Sin contacto pasadas ${REGLAS.contactoH} h`, sinC.length, 'siguen sin atender') +
-    stat('var(--c-positive)', `Con seguimiento en ${REGLAS.seguimientoH} h`, pct(okS.length, evS.length), `${okS.length} de ${evS.length}`) +
-    stat('var(--c-warn)', 'Todavía dentro de plazo', plazo.length, 'sin vencer')
+    stat(semaforo(okC.length, evC.length), `Contactados en menos de ${fmtHab(REGLAS.primerMin / 60)}`, pct(okC.length, evC.length), `${okC.length} de ${evC.length} · horas hábiles`) +
+    stat(sin24.length ? 'var(--c-loss)' : 'var(--c-positive)', `Sin contacto pasadas ${REGLAS.sinContactoH} h`, sin24.length, 'ningún contacto registrado en Kommo') +
+    stat(semaforo(okS.length, evS.length), `Con seguimiento en ${REGLAS.seguimientoH} h`, pct(okS.length, evS.length), `${okS.length} de ${evS.length} · horas hábiles`) +
+    stat('var(--c-warn)', 'Todavía dentro de plazo', plazo.length, 'aún pueden cumplir')
   ) : '';
   if (!n) $('stats').innerHTML = '<div class="empty" style="grid-column:1/-1">Sin leads asignados por la IA en este periodo.</div>';
 
@@ -277,23 +337,24 @@ function pintar() {
   const por = {};
   filas.forEach(f => { (por[f.asesor || 'Sin asesor'] ||= []).push(f); });
   const rowsA = Object.entries(por).map(([nombre, ls]) => {
-    const eC = ls.filter(f => f.contacto !== 'plazo'), oC = eC.filter(f => f.contacto === 'ok');
+    const eC = ls.filter(f => f.contacto !== 'plazo'), oC = eC.filter(f => f.contacto === 'ideal');
     const eS = ls.filter(f => f.segun !== 'plazo'), oS = eS.filter(f => f.segun === 'ok');
     const med = mediana(ls.filter(f => f._horas != null).map(f => f._horas));
     const inc = ls.filter(f => f.estado === 'incumple').length;
     return { nombre, n: ls.length, c: pct(oC.length, eC.length), cn: eC.length ? oC.length / eC.length : -1, med, s: pct(oS.length, eS.length), inc };
   }).sort((a, b) => b.inc - a.inc || a.nombre.localeCompare(b.nombre));
-  $('tablaAsesores').innerHTML = rowsA.length ? `<table><thead><tr><th>Asesor</th><th class="num">Asignados</th><th class="num">Contacto &lt; ${REGLAS.contactoH} h</th><th class="num">Mediana al 1.er contacto</th><th class="num">Seguimiento &lt; ${REGLAS.seguimientoH} h</th><th class="num">Incumplen</th></tr></thead><tbody>` +
-    rowsA.map(a => `<tr><td>${esc(a.nombre)}</td><td class="num">${a.n}</td><td class="num">${a.c}</td><td class="num">${fmtHoras(a.med)}</td><td class="num">${a.s}</td><td class="num">${a.inc ? `<span class="pill bad">${a.inc}</span>` : '0'}</td></tr>`).join('') +
+  $('tablaAsesores').innerHTML = rowsA.length ? `<table><thead><tr><th>Asesor</th><th class="num">Asignados</th><th class="num">Contacto &lt; ${fmtHab(REGLAS.primerMin / 60)}</th><th class="num">Mediana al 1.er contacto</th><th class="num">Seguimiento &lt; ${REGLAS.seguimientoH} h</th><th class="num">Incumplen</th></tr></thead><tbody>` +
+    rowsA.map(a => `<tr><td>${esc(a.nombre)}</td><td class="num">${a.n}</td><td class="num">${a.c}</td><td class="num">${fmtHab(a.med)}</td><td class="num">${a.s}</td><td class="num">${a.inc ? `<span class="pill bad">${a.inc}</span>` : '0'}</td></tr>`).join('') +
     '</tbody></table>' : '<div class="empty">Sin datos.</div>';
   if (rowsA.length === 1) $('tablaAsesores').insertAdjacentHTML('beforeend', '<p class="nota" style="margin-top:10px">Esta cuenta tiene un solo responsable en Kommo (todo el equipo comparte el mismo usuario), por eso aparece una sola fila.</p>');
 
   pintarLeads();
-  $('rContacto').textContent = REGLAS.contactoH; $('rSeg').textContent = REGLAS.seguimientoH;
   $('nota').innerHTML =
     `<p><b>Qué es un lead de Sócrates:</b> uno que la IA calificó y pasó a un humano. Se mide desde ese momento.</p>` +
-    `<p><b>Contacto:</b> el primer toque humano (mensaje, llamada o nota) debe ocurrir dentro de ${REGLAS.contactoH} h. <b>Seguimiento:</b> debe haber al menos un toque más, después del primero, dentro de ${REGLAS.seguimientoH} h desde la asignación.</p>` +
-    `<p><b>Horas:</b> corridas, las 24 horas del día (sin descontar horario laboral).</p>` +
+    `<p><b>Contacto ideal:</b> el primer toque humano (mensaje, llamada o nota) en menos de ${fmtHab(REGLAS.primerMin / 60)} desde que la IA entregó el lead. Si fue después, aparece como «Tarde».</p>` +
+    `<p><b>Sin contacto pasadas ${REGLAS.sinContactoH} h:</b> ni un solo toque registrado en Kommo desde la entrega. Un lead que sí se contactó, pero tarde, <b>no</b> entra aquí.</p>` +
+    `<p><b>Seguimiento:</b> al menos un toque más, después del primero, dentro de ${REGLAS.seguimientoH} h desde la entrega. <b>Cumple</b> = contacto ideal + seguimiento.</p>` +
+    `<p><b>Horas hábiles:</b> solo corre el reloj ${esc(HOR.texto)}. Si la IA entrega un lead fuera de ese horario, el conteo arranca cuando abre el siguiente día hábil. Cada cuenta tiene su horario, se configura en el flujo.</p>` +
     (st.data.nota_metodologica ? `<p>${esc(st.data.nota_metodologica)}</p>` : '');
 }
 
@@ -302,7 +363,8 @@ function filtrar() {
   const ord = { incumple: 0, plazo: 1, cumple: 2 };
   return st.filas.filter(f => {
     if (st.filtro === 'incumple' && f.estado !== 'incumple') return false;
-    if (st.filtro === 'sin' && f.contacto !== 'sin' && f.contacto !== 'tarde') return false;
+    if (st.filtro === 'fuera' && f.contacto !== 'sin' && f.contacto !== 'tarde') return false;
+    if (st.filtro === 'sin24' && !f.sin24) return false;
     if (st.filtro === 'falta' && f.segun !== 'falta') return false;
     if (st.filtro === 'plazo' && f.estado !== 'plazo') return false;
     if (st.filtro === 'cumple' && f.estado !== 'cumple') return false;
@@ -312,9 +374,9 @@ function filtrar() {
 }
 
 function pillContacto(f) {
-  if (f.contacto === 'ok') return `<span class="pill ok">${fmtHoras(f._horas)}</span>`;
-  if (f.contacto === 'tarde') return `<span class="pill bad">Tarde · ${fmtHoras(f._horas)}</span>`;
-  if (f.contacto === 'sin') return '<span class="pill bad">Sin contacto</span>';
+  if (f.contacto === 'ideal') return `<span class="pill ok">${fmtHab(f._horas)}</span>`;
+  if (f.contacto === 'tarde') return `<span class="pill bad">Tarde · ${fmtHab(f._horas)}</span>`;
+  if (f.contacto === 'sin') return `<span class="pill bad">Sin contacto · ${fmtHab(f._trans)}</span>`;
   return '<span class="pill wait">En plazo</span>';
 }
 function pillSeg(f) {
@@ -336,8 +398,8 @@ function pintarLeads() {
 }
 
 function csv() {
-  const cab = ['lead', 'asesor', 'embudo', 'asignado_por_ia', 'primer_contacto', 'horas_al_primer_contacto', 'contacto', 'seguimiento', 'estado'];
-  const lin = filtrar().map(f => [f.nombre, f.asesor, f.embudo, new Date(f._asignado).toISOString(), f._primer ? new Date(f._primer).toISOString() : '', f._horas != null ? f._horas.toFixed(2) : '', f.contacto, f.segun, f.estado]
+  const cab = ['lead', 'asesor', 'embudo', 'asignado_por_ia', 'primer_contacto', 'horas_habiles_al_primer_contacto', 'contacto', 'sin_contacto_pasado_el_limite', 'seguimiento', 'estado'];
+  const lin = filtrar().map(f => [f.nombre, f.asesor, f.embudo, new Date(f._asignado).toISOString(), f._primer ? new Date(f._primer).toISOString() : '', f._horas != null ? f._horas.toFixed(2) : '', f.contacto, f.sin24 ? 'si' : 'no', f.segun, f.estado]
     .map(v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(','));
   const blob = new Blob([String.fromCharCode(65279) + cab.join(',') + String.fromCharCode(10) + lin.join(String.fromCharCode(10))], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
