@@ -21,8 +21,8 @@ Primera cuenta: **Instituto Landa**. Siguiente: Green Hills (falta su token y su
 ## Cómo se decide qué es un lead de Sócrates
 - **Delegado por la IA:** la primera vez que el lead entra a una etapa "delegada" dentro del periodo **y ese cambio lo hizo el sistema** (`created_by = 0`).
   Si lo movió una persona, no cuenta (se informa cuántos fueron).
-- Etapas delegadas de Landa: Preparatoria › Delegado Instituto Landa y Delegado Infinity Learning; Infinity Learning IA › Delegado; Embudo de ventas › Interés.
-- **Toque humano:** WhatsApp o llamada saliente, nota o tarea completada hecha por una persona (`created_by ≠ 0`) dentro de Kommo.
+- Etapas delegadas de Landa: Preparatoria › Delegado Instituto Landa y Infinity Learning IA › Delegado; Embudo de ventas › Interés.
+- **Toque humano:** WhatsApp o llamada saliente, nota o tarea cerrada (la IA la crea, la asesora la cierra; se toma la hora del cierre) dentro de Kommo.
   Lo que se escribe fuera de Kommo no aparece. Los toques separados por menos de 60 min cuentan como uno (una ráfaga de mensajes no es un seguimiento).
 - **Reglas (iteración del director, 17-nov):**
   - **Contacto ideal:** primer toque humano en **20 min o menos** (antes 24 h).

@@ -73,6 +73,8 @@
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; align-items: center; }
   .chip { font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-soft); cursor: pointer; }
   .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  th.ord { cursor: pointer; user-select: none; } th.ord:hover, th.ord.on { color: var(--ink); text-decoration: underline; }
+  .chips select { font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); }
   .chips input[type=search] { margin-left: auto; min-width: 220px; }
 
   .empty { padding: 26px 10px; text-align: center; color: var(--ink-soft); font-size: 13.5px; }
@@ -143,7 +145,7 @@
 
   <section class="card">
     <h2>Leads asignados por la IA</h2>
-    <p class="sub">Primero los que incumplen. Toca el nombre para abrirlo en el CRM.</p>
+    <p class="sub">Por omisión, primero los que incumplen. Ordena con el selector o tocando el título de una columna. Toca el nombre para abrirlo en el CRM.</p>
     <div class="chips" id="chips">
       <button class="chip on" data-f="todos">Todos</button>
       <button class="chip" data-f="incumple">Incumplen</button>
@@ -153,6 +155,10 @@
       <button class="chip" data-f="plazo">Dentro de plazo</button>
       <button class="chip" data-f="cumple">Cumplen</button>
       <input type="search" id="buscar" placeholder="Buscar lead o asesor">
+    </div>
+    <div class="chips"><label for="orden" style="font-size:12.5px;font-weight:600;color:var(--ink-soft)">Ordenar por</label>
+      <select id="orden"></select>
+      <button class="chip" id="btnDir" title="Invertir el orden">⇅ Invertir</button>
     </div>
     <div class="table-scroll" id="tablaLeads"></div>
     <div class="more" id="more"></div>
@@ -177,7 +183,18 @@ const PAGINA = 100;
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const st = { data: null, filtro: 'todos', q: '', limite: PAGINA, demo: false, filas: [] };
+const st = { data: null, filtro: 'todos', q: '', limite: PAGINA, demo: false, filas: [], orden: 'estado', dir: 1 };
+// Columnas ordenables: clave -> [etiqueta, función de valor, dirección natural (1 = ascendente)]. Los valores nulos siempre van al final.
+const ORDENES = {
+  estado: ['Estado (incumplen primero)', f => ({ incumple: 0, plazo: 1, cumple: 2 }[f.estado]), 1],
+  sinatender: ['Más tiempo sin atender', f => f._sinAtender, -1],
+  ultimo: ['Último toque', f => f._ultimo, 1],
+  asignado: ['Fecha de asignación', f => f._asignado, -1],
+  primer: ['Tiempo al 1.er contacto', f => f._horas, -1],
+  toques: ['Número de toques', f => f._toques, 1],
+  nombre: ['Lead', f => (f.nombre || '').toLowerCase(), 1],
+  asesor: ['Asesor', f => (f.asesor || '').toLowerCase(), 1],
+};
 
 // ---------- Utilidades ----------
 // Fecha LOCAL como AAAA-MM-DD (no usar toISOString: pasa a UTC y adelanta el día después de las 18:00 en México).
@@ -257,7 +274,9 @@ function evaluar(l, ahora) {
   const incumple = contacto === 'tarde' || contacto === 'sin' || segun === 'falta';
   const cumple = contacto === 'ideal' && segun === 'ok';
   const estado = incumple ? 'incumple' : (cumple ? 'cumple' : 'plazo');
-  return { ...l, _asignado: asignado, _primer: primer, _horas: horas, _trans: trans, _toques: toques.length, contacto, sin24, segun, estado };
+  const ultimo = toques.length ? toques[toques.length - 1] : null;
+  const sinAtender = hab(ultimo ?? asignado, ahora);   // horas hábiles desde el último toque (o desde la entrega, si nunca lo tocaron)
+  return { ...l, _ultimo: ultimo, _sinAtender: sinAtender, _asignado: asignado, _primer: primer, _horas: horas, _trans: trans, _toques: toques.length, contacto, sin24, segun, estado };
 }
 
 // ---------- Datos ----------
@@ -370,7 +389,15 @@ function filtrar() {
     if (st.filtro === 'cumple' && f.estado !== 'cumple') return false;
     if (q && !((f.nombre || '') + ' ' + (f.asesor || '')).toLowerCase().includes(q)) return false;
     return true;
-  }).sort((a, b) => ord[a.estado] - ord[b.estado] || b._asignado - a._asignado);
+  }).sort((a, b) => {
+    const [, val, nat] = ORDENES[st.orden] || ORDENES.estado;
+    const va = val(a), vb = val(b);
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1; if (vb == null) return -1;   // sin dato siempre al final
+    const c = va < vb ? -1 : va > vb ? 1 : 0;
+    // `dir` = 1 deja el orden natural de la columna; -1 lo invierte. Desempate: más reciente primero.
+    return (c * nat * st.dir) || (ord[a.estado] - ord[b.estado]) || (b._asignado - a._asignado);
+  });
 }
 
 function pillContacto(f) {
@@ -384,14 +411,23 @@ function pillSeg(f) {
   if (f.segun === 'falta') return '<span class="pill bad">No</span>';
   return '<span class="pill wait">En plazo</span>';
 }
+function celdaUltimo(f) {
+  if (f._ultimo == null) return `<span class="pill bad">Nunca · ${fmtHab(f._sinAtender)} sin atender</span>`;
+  return `${fmtFecha(f._ultimo)}<div class="muted" style="font-size:12px">hace ${fmtHab(f._sinAtender)} hábiles · ${f._toques} ${f._toques === 1 ? 'toque' : 'toques'}</div>`;
+}
 function pillEstado(f) {
   return f.estado === 'cumple' ? '<span class="pill ok">Cumple</span>' : f.estado === 'incumple' ? '<span class="pill bad">Incumple</span>' : '<span class="pill wait">En plazo</span>';
 }
 
+function th(k, t) {   // encabezado que se puede tocar para ordenar
+  const on = st.orden === k, flecha = on ? (st.dir === 1 ? ' ▲' : ' ▼') : '';
+  return `<th class="ord${on ? ' on' : ''}" data-o="${k}" title="Ordenar por esta columna">${t}${flecha}</th>`;
+}
 function pintarLeads() {
+  const sel = $('orden'); if (sel && sel.value !== st.orden) sel.value = st.orden;
   const filas = filtrar(), ver = filas.slice(0, st.limite);
-  $('tablaLeads').innerHTML = filas.length ? `<table><thead><tr><th>Lead</th><th>Asesor</th><th>Entregado en</th><th>Hoy está en</th><th>Asignado por la IA</th><th>1.er contacto</th><th>Seguimiento</th><th>Estado</th></tr></thead><tbody>` +
-    ver.map(f => `<tr><td>${f.url && f.url !== '#' ? `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.nombre)}</a>` : esc(f.nombre)}</td><td>${esc(f.asesor || '—')}</td><td class="muted">${esc((f.embudo || '—') + (f.etapa_entrada ? ' › ' + f.etapa_entrada : ''))}</td><td class="muted">${esc(f.etapa_actual || '—')}</td><td class="num">${fmtFecha(f._asignado)}</td><td>${pillContacto(f)}</td><td>${pillSeg(f)}</td><td>${pillEstado(f)}</td></tr>`).join('') +
+  $('tablaLeads').innerHTML = filas.length ? `<table><thead><tr>${th('nombre','Lead')}${th('asesor','Asesor')}<th>Entregado en</th><th>Hoy está en</th>${th('asignado','Asignado por la IA')}${th('primer','1.er contacto')}${th('ultimo','Último toque')}<th>Seguimiento</th>${th('estado','Estado')}</tr></thead><tbody>` +
+    ver.map(f => `<tr><td>${f.url && f.url !== '#' ? `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.nombre)}</a>` : esc(f.nombre)}</td><td>${esc(f.asesor || '—')}</td><td class="muted">${esc((f.embudo || '—') + (f.etapa_entrada ? ' › ' + f.etapa_entrada : ''))}</td><td class="muted">${esc(f.etapa_actual || '—')}</td><td class="num">${fmtFecha(f._asignado)}</td><td>${pillContacto(f)}</td><td>${celdaUltimo(f)}</td><td>${pillSeg(f)}</td><td>${pillEstado(f)}</td></tr>`).join('') +
     '</tbody></table>' : '<div class="empty">Ningún lead con este filtro.</div>';
   $('more').innerHTML = filas.length > ver.length ? `<button class="sec" id="btnMas">Mostrar más (${filas.length - ver.length})</button>` : '';
   const b = $('btnMas'); if (b) b.onclick = () => { st.limite += PAGINA; pintarLeads(); };
@@ -437,6 +473,12 @@ async function cargar() {
   $('desde').onchange = marcarPreset; $('hasta').onchange = marcarPreset;
   $('chips').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return;
     st.filtro = c.dataset.f; st.limite = PAGINA; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c)); pintarLeads(); });
+  $('orden').innerHTML = Object.entries(ORDENES).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('');
+  const poner = (k, dir) => { st.orden = k; st.dir = dir; st.limite = PAGINA; pintarLeads(); };
+  $('orden').onchange = e => poner(e.target.value, 1);
+  $('btnDir').onclick = () => poner(st.orden, -st.dir);
+  $('tablaLeads').addEventListener('click', e => { const h = e.target.closest('th.ord'); if (!h) return;
+    const k = h.dataset.o; poner(k, st.orden === k ? -st.dir : 1); });
   $('buscar').addEventListener('input', e => { st.q = e.target.value; st.limite = PAGINA; pintarLeads(); });
   cargar();
 })();
